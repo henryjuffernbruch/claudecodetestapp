@@ -19,6 +19,7 @@ from specter.storage.models import Classification
 from specter.classifier.rules import RuleBasedClassifier
 from specter.signals.generator import SignalGenerator
 from specter.monitoring.alerts import AlertsManager
+from specter.execution.executor import TradeExecutor
 
 # ============================================================================
 # Logging Setup
@@ -101,6 +102,10 @@ class SPECTERSystem:
 
             self.alerts_manager = AlertsManager()
             self.logger.info("✓ Alerts manager initialized")
+
+            # Phase 3 components
+            self.executor = TradeExecutor(db=self.db)
+            self.logger.info("✓ Trade executor initialized")
 
             # Verify collectors
             collector_status = self.aggregator.get_status()
@@ -231,14 +236,59 @@ class SPECTERSystem:
                 self.logger.error(f"Failed to send signal alert: {e}")
 
         # ====================================================================
-        # Steps 6 & 7: EXECUTE & MONITOR (Phase 3+)
+        # Step 6: EXECUTE - Execute trades on Kalshi (Phase 3)
         # ====================================================================
-        # Placeholder for future trade execution and monitoring
+        self.logger.debug("Step 6: Executing trades...")
+        executed_count = 0
 
+        for signal in trade_signals:
+            try:
+                # Get current price (placeholder, would use market data in production)
+                current_price = 0.5
+
+                trade = self.executor.execute_signal(signal, current_price)
+
+                if trade:
+                    executed_count += 1
+                    # Send execution alert
+                    try:
+                        self.alerts_manager.send_execution_alert(
+                            trade.topic,
+                            trade.direction,
+                            trade.entry_size,
+                            trade.entry_price,
+                            trade.signal_confidence
+                        )
+                    except Exception as e:
+                        self.logger.error(f"Failed to send execution alert: {e}")
+
+            except Exception as e:
+                self.logger.error(f"Trade execution error: {e}")
+
+        # ====================================================================
+        # Step 7: MONITOR - Check positions and close if needed
+        # ====================================================================
+        self.logger.debug("Step 7: Monitoring positions...")
+
+        # Check for timeouts
+        closed_timeout = self.executor.check_position_timeouts()
+
+        # Check for stop-losses
+        closed_stoploss = self.executor.check_stoploss()
+
+        # Get executor status
+        exec_status = self.executor.get_status()
+
+        # Log summary
         self.logger.info(
-            f"[Loop {self.loop_count}] Stored: {stored_ei_count} EI, "
-            f"{stored_signal_count} signals, {signal_count} trade signals. "
-            f"Loop time: {self.last_loop_time:.2f}s"
+            f"[Loop {self.loop_count}] "
+            f"Stored: {stored_ei_count} EI, {stored_signal_count} signals | "
+            f"Signals: {signal_count} | "
+            f"Executed: {executed_count} | "
+            f"Closed: {len(closed_timeout) + len(closed_stoploss)} | "
+            f"Open: {exec_status['open_positions']} | "
+            f"P&L: ${exec_status['daily_pnl']:+.2f} | "
+            f"Loop: {self.last_loop_time:.2f}s"
         )
 
     def _shutdown(self):
