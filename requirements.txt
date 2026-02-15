@@ -1,0 +1,16 @@
+requests==2.31.0
+aiohttp==3.9.1
+praw==7.7.0
+google-api-python-client==2.100.0
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+pandas==2.2.0
+numpy==1.26.4
+scipy==1.12.0
+scikit-learn==1.4.2
+sqlite-utils==3.35.0
+python-telegram-bot==20.7
+rich==13.7.0
+schedule==1.2.0
+python-dotenv==1.0.0
+snscrape==0.7.20231102
