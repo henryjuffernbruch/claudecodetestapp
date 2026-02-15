@@ -15,6 +15,10 @@ from specter.config import settings
 from specter.ingestion.aggregator import create_aggregator
 from specter.index.engine import EngagementIndexEngine
 from specter.storage.timeseries_db import TimeseriesDB
+from specter.storage.models import Classification
+from specter.classifier.rules import RuleBasedClassifier
+from specter.signals.generator import SignalGenerator
+from specter.monitoring.alerts import AlertsManager
 
 # ============================================================================
 # Logging Setup
@@ -87,6 +91,16 @@ class SPECTERSystem:
 
             self.db = TimeseriesDB()
             self.logger.info("✓ Database initialized")
+
+            # Phase 2 components
+            self.classifier = RuleBasedClassifier()
+            self.logger.info("✓ Classifier initialized")
+
+            self.signal_generator = SignalGenerator()
+            self.logger.info("✓ Signal generator initialized")
+
+            self.alerts_manager = AlertsManager()
+            self.logger.info("✓ Alerts manager initialized")
 
             # Verify collectors
             collector_status = self.aggregator.get_status()
@@ -178,12 +192,54 @@ class SPECTERSystem:
         )
 
         # ====================================================================
-        # Future steps (Phase 2+):
-        # Step 4: CLASSIFY - Decay pattern classification
-        # Step 5: SIGNAL - Generate trading signals
-        # Step 6: EXECUTE - Execute trades on Kalshi
-        # Step 7: MONITOR - Update dashboard, send alerts
+        # Step 4: CLASSIFY - Decay pattern classification (Phase 2)
         # ====================================================================
+        self.logger.debug("Step 4: Classifying attention decay patterns...")
+        classifications = {}
+
+        for topic, ei in eis.items():
+            # Get EI history for classification window
+            ei_history = self.ei_engine.get_history(topic, limit=30)
+            if ei_history:
+                ei_values = [ei_val for ei_val, _ in ei_history]
+                archetype, confidence, features = self.classifier.classify(ei_values)
+
+                classification = Classification(
+                    topic=topic,
+                    timestamp=current_time,
+                    archetype=archetype,
+                    confidence=confidence,
+                    features=features,
+                    metadata={"ei_window_size": len(ei_values)},
+                )
+                classifications[topic] = classification
+
+                if self.db.insert_classification(classification):
+                    stored_signal_count += 1
+
+        # ====================================================================
+        # Step 5: SIGNAL - Generate trading signals (Phase 2)
+        # ====================================================================
+        self.logger.debug("Step 5: Generating trading signals...")
+        trade_signals = self.signal_generator.generate_signals_batch(eis)
+
+        signal_count = len(trade_signals)
+        for signal in trade_signals:
+            try:
+                self.alerts_manager.send_signal_alert(signal)
+            except Exception as e:
+                self.logger.error(f"Failed to send signal alert: {e}")
+
+        # ====================================================================
+        # Steps 6 & 7: EXECUTE & MONITOR (Phase 3+)
+        # ====================================================================
+        # Placeholder for future trade execution and monitoring
+
+        self.logger.info(
+            f"[Loop {self.loop_count}] Stored: {stored_ei_count} EI, "
+            f"{stored_signal_count} signals, {signal_count} trade signals. "
+            f"Loop time: {self.last_loop_time:.2f}s"
+        )
 
     def _shutdown(self):
         """Perform shutdown operations."""
